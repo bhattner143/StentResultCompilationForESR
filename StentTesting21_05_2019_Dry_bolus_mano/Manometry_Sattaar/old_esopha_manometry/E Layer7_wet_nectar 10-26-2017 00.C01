@@ -1,0 +1,183 @@
+FileType = History
+FileFormatRev = 0
+
+Application = "Esophageal"
+ApplicationSetup1 = "YkVbQVRQX1lRTQ=="
+ApplicationSetup2 = "clhGVE9FSlVTVUNH"
+
+Begin Patient
+   Patient = "Layer7_wet_nectar"
+   PatientID = ""
+   PatientDOB = ""
+   Exported = "No "
+   Physician = "Jacqui Allen, MBChB, FRACS"
+   ReferringPhysician = "Jacqui Allen, FRACS"
+   Hospital = "UCDMC  ENT Clinic"
+   Date = "2017-10-26"
+   Time = "23:34:40"
+End Patient
+
+Begin Procedure ;1
+
+   AtoDBits = 12 
+   AtoDMaxChannels = 32 
+   AtoDType = InSIGHT
+   ProtocolFileName = "S989120.pro"
+   ProtocolName = "5 Channel Express"
+   ProtocolRevision = ""
+   CalibrationConfigurationFileName = "S989120"
+   RangeFileName = "Range1.stp"
+   Date = "2017-10-26"
+   Time = "23:35:46"
+   SampleRate = 30
+   NumChannelsRecorded = 6
+
+   Begin Channel ;1
+      Type = CHTYPE_RESP
+      DistanceToReference = NAN
+      AtoDChannel = 0
+      CalibrationDate = "Default 2000-12-28"
+      CalibrationTime = "Default 14:59:08"
+      CalibrationUnits = "Respiration"
+      CalibrationMeasuredOffset = 32768 (0x00000047)
+      CalibrationDeltaMeasured = 8192 (0x00000046)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 1 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "X1"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;1
+
+   Begin Channel ;2
+      Type = CHTYPE_PRESS
+      DistanceToReference =  20 
+      AtoDChannel = 1
+      CalibrationDate = "2017-10-02"
+      CalibrationTime = "02:13:05"
+      CalibrationUnits = "0,100 mmHg"
+      CalibrationMeasuredOffset = 37400 (0x00181247)
+      CalibrationDeltaMeasured = 3676 (0x00C06545)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 7 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "100"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;2
+
+   Begin Channel ;3
+      Type = CHTYPE_PRESS
+      DistanceToReference =  15 
+      AtoDChannel = 2
+      CalibrationDate = "2017-10-02"
+      CalibrationTime = "02:13:05"
+      CalibrationUnits = "0,100 mmHg"
+      CalibrationMeasuredOffset = 36012 (0x00AC0C47)
+      CalibrationDeltaMeasured = 3984 (0x00007945)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 7 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "100"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;3
+
+   Begin Channel ;4
+      Type = CHTYPE_PRESS
+      DistanceToReference =  10 
+      AtoDChannel = 3
+      CalibrationDate = "2017-10-02"
+      CalibrationTime = "02:13:05"
+      CalibrationUnits = "0,100 mmHg"
+      CalibrationMeasuredOffset = 41628 (0x009C2247)
+      CalibrationDeltaMeasured = 3892 (0x00407345)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 7 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "100"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;4
+
+   Begin Channel ;5
+      Type = CHTYPE_PRESS
+      DistanceToReference =  5 
+      AtoDChannel = 4
+      CalibrationDate = "2017-10-02"
+      CalibrationTime = "02:13:05"
+      CalibrationUnits = "0,100 mmHg"
+      CalibrationMeasuredOffset = 41452 (0x00EC2147)
+      CalibrationDeltaMeasured = 3100 (0x00C04145)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 7 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "25"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;5
+
+   Begin Channel ;6
+      Type = CHTYPE_PRESS
+      DistanceToReference =  0 
+      AtoDChannel = 5
+      CalibrationDate = "2017-10-02"
+      CalibrationTime = "02:13:05"
+      CalibrationUnits = "0,100 mmHg"
+      CalibrationMeasuredOffset = 37800 (0x00A81347)
+      CalibrationDeltaMeasured = 3672 (0x00806545)
+      CalibrationPhysicalOffset = 0 (0x00000000)
+      CalibrationDeltaPhysical = 100 (0x0000C842)
+      Flags = 7 
+      TempCompOffset =NAN
+      DisplayOffset = 0 (0x00000000)
+      DisplayRange = "25"
+      RangeOffset = 0 (0x00000000)
+   End Channel ;6
+
+   Begin Study ;1
+      Name = "LES"
+      StudyType = "LES"
+   End Study ;1
+
+   Begin Study ;2
+      Name = "Lower Esophageal Body"
+      StudyType = "LESOB"
+      Begin StudySpecial ;2
+         DistVelChannel = 5  '0x5
+         ProxVelChannel = 4  '0x4
+      End StudySpecial ;2
+   End Study ;2
+
+   Begin Study ;3
+      Name = "Upper Esophageal Body"
+      StudyType = "UESOB"
+   End Study ;3
+
+   Begin Event ;1
+      Type = "$EPD"
+      Text = "<Value1>"
+      Date = "2017-10-26"
+      Time = "23:35:46"
+      StripchartFileIndex =  12   '0xC
+      Value1 = 60.0 (0x0000000000004E40)
+      Value1Units = "cm"
+      Value1Format = "#0.0"
+   End Event ;1
+
+   Begin Recording ;1
+      StartingDate = "2017-10-26"
+      StartingTime = "23:35:46"
+      StartingStripchartFileIndex =  0   '0x0
+      EndingDate = "2017-10-26"
+      EndingTime = "23:36:35"
+      EndingStripchartFileIndex =  17472   '0x4440
+   End Recording ;1
+
+End Procedure ;1
+

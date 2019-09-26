@@ -1,0 +1,19 @@
+FileType = History
+FileFormatRev = 0
+
+Application = "Esophageal"
+ApplicationSetup1 = "YENbQFlQW1xXSw=="
+ApplicationSetup2 = "cF5GVUJFTlBVU0NE"
+
+Begin Patient
+   Patient = "Manometry_P1568_4"
+   PatientID = "60mmat40mmps_BolusSwallow"
+   PatientDOB = ""
+   Exported = "No "
+   Physician = "Jacqui Allen, MBChB, FRACS"
+   ReferringPhysician = "Wet Swa"
+   Hospital = "UCDMC  ENT Clinic"
+   Date = "2019-05-01"
+   Time = "01:47:03"
+End Patient
+

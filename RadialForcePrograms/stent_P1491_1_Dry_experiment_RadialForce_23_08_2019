@@ -1,0 +1,984 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jun  6 10:57:22 2019
+
+@author: dipankarbhattacharya
+"""
+import os
+import pdb
+import sys
+if sys.version_info[0] < 3:
+    from StringIO import StringIO
+else:
+    from io import StringIO
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib import style
+import pandas as pd
+from intelhex import IntelHex
+from sklearn.linear_model import LinearRegression
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.nonparametric.smoothers_lowess import lowess
+from dateutil.parser import parse
+from scipy.signal import find_peaks,peak_prominences
+from scipy.interpolate import interp1d
+from scipy.misc import derivative
+from scipy import interpolate
+from scipy.interpolate import Rbf, InterpolatedUnivariateSpline
+import random
+
+# =============================================================================
+# 
+# =============================================================================
+class stentFSP:
+    
+    columns_new = ['Digital Pressure'] #class attribute
+    #Constructor method
+    def __init__(self,path,stentName,name):
+        self.path = path
+        self.stentName=stentName
+        self.name=name
+        os.chdir(self.path) # whenever we will create an instance of the class, the path will be set for it
+    
+    # Instance method to find files in the folder
+    def find_all(self):
+        self.files=[files[index] for root, dirs, files in sorted(os.walk(self.path)) for index in range(len(files)) if name in files[index]] 
+# =============================================================================
+#     
+# =============================================================================
+    # Reading the files, and generating a dataframe object containing the digital values obtained from the FSP
+    def FileReading(self,dfWindow,stentCutExp='n'):
+#        pdb.set_trace()
+        if stentCutExp=='n':
+            df1=pd.read_csv(self.files[0], sep=',',header=None)
+            df1=df1[2:]
+            self.df=pd.DataFrame(data=float(self.name[11:])+df1.values[:,2],columns=stentFSP.columns_new)
+            
+            for index in range(len(self.files)):
+                df1=pd.read_csv(self.files[index], sep=',',header=None)
+                self.df = pd.concat([self.df, pd.DataFrame(df1.values[2:,3:5], \
+                                         columns=['A1_'+self.files[index][75:],'A2_'+self.files[index][75:]])],\
+                                         axis=1)#73
+            self.df=self.df[dfWindow[0]:dfWindow[1]]
+            
+        # For stent cut
+        elif stentCutExp=='y':
+#            pdb.set_trace()
+            self.df=pd.DataFrame()
+            for index in range(len(self.files)):
+                df1=pd.read_csv(self.files[index], sep=',',header=None)
+                self.df = pd.concat([self.df, pd.DataFrame(df1.values[2:,2:5], \
+                                         columns=['DigitalPressure_'+self.files[index].split('_')[4].split('.')[0],\
+                                                  'A1_'+self.files[index].split('_')[4].split('.')[0],\
+                                                  'A2_'+self.files[index].split('_')[4].split('.')[0]])],\
+                                         axis=1)#73
+            self.df=self.df[dfWindow[0]:dfWindow[1]]
+            
+        elif stentCutExp=='FSP':
+#            pdb.set_trace()
+            self.df=pd.DataFrame()
+            for index in range(len(self.files)):
+                df1=pd.read_csv(self.files[index], sep=',',header=None)
+                self.df = pd.concat([self.df, pd.DataFrame(df1.values[2:,2:5], \
+                                         columns=['Displacement_'+self.files[index].split('o')[3].split('.')[0]+'_'+self.files[index].split('l')[3].split('_')[0],\
+                                                  'A1_'+self.files[index].split('o')[3].split('.')[0]+'_'+self.files[index].split('l')[3].split('_')[0],\
+                                                  'A2_'+self.files[index].split('o')[3].split('.')[0]+'_'+self.files[index].split('l')[3].split('_')[0]])],\
+                                         axis=1)#73
+            self.df=self.df[dfWindow[0]:dfWindow[1]]
+#            self.df.fillna(0, inplace=True)i
+# =============================================================================
+#     
+# =============================================================================
+    # Generating equivalent force from the df 
+    def FSPDigitalVal2Force(self,stentCutExp='n'):
+        
+        if stentCutExp=='n':
+            self.dfForce=pd.DataFrame(data=self.df.values[:,0],columns=stentFSP.columns_new)
+    
+            for ii in range(1,int((len(self.df.columns.values)+1)/2)):
+    #            pdb.set_trace()
+                dftemp=self.df[self.df.columns.values[2*ii]]/(self.df[self.df.columns.values[2*ii-1]]-\
+                              self.df[self.df.columns.values[2*ii]])
+                
+                dftemp=dftemp/1#Area[2*ii-1]
+                
+                # Resetting the indexing for concat
+                dftemp.reset_index(drop=True, inplace=True)
+                self.dfForce.reset_index(drop=True, inplace=True)
+                
+                self.dfForce=pd.concat([self.dfForce,pd.DataFrame(dftemp,columns=[self.df.columns.values[2*ii][3:]])],axis=1,sort=False)
+            
+        elif stentCutExp=='y':
+            
+            self.dfForce=pd.DataFrame()
+#            pdb.set_trace()
+            # self.df.columns.values[0].split('.')[0].split('_')[1]
+            tempStringArray=self.df.columns.values[np.linspace(0, 3*len(self.files)-3, (3*len(self.files)-3)/3+1,dtype=int)] #0,9,4
+           
+            for ii in range(tempStringArray.shape[0]):         
+                dftemp=self.df['A2_'+tempStringArray[ii].split('_')[1]]/\
+                (self.df['A1_'+tempStringArray[ii].split('_')[1]]-self.df['A2_'+tempStringArray[ii].split('_')[1]])
+            
+                dftemp.reset_index(drop=True, inplace=True)
+                self.dfForce.reset_index(drop=True, inplace=True)
+                
+                self.dfForce=pd.concat([self.dfForce,self.df[tempStringArray[ii]]],axis=1,sort=False)
+                self.dfForce=pd.concat([self.dfForce,pd.DataFrame(dftemp,columns=['Force'+tempStringArray[ii].split('_')[1]])],axis=1,sort=False)
+         
+        elif stentCutExp=='FSP':
+            
+            self.dfForce=pd.DataFrame()
+#            pdb.set_trace()
+            # self.df.columns.values[0].split('.')[0].split('_')[1]
+            tempStringArray=self.df.columns.values[np.linspace(0, 3*len(self.files)-3, (3*len(self.files)-3)/3+1,dtype=int)+1]
+            tempStringArray2=self.df.columns.values[np.linspace(0,3*len(self.files)-3, (3*len(self.files)-3)/3+1,dtype=int)]
+           
+            for ii in range(tempStringArray.shape[0]):         
+                dftemp=self.df['A2_'+tempStringArray[ii].split('_')[1]+'_'+tempStringArray[ii].split('_')[2]]/\
+                (self.df['A1_'+tempStringArray[ii].split('_')[1]+'_'+tempStringArray[ii].split('_')[2]]\
+                         -self.df['A2_'+tempStringArray[ii].split('_')[1]+'_'+tempStringArray[ii].split('_')[2]])
+            
+                dftemp.reset_index(drop=True, inplace=True)
+                self.dfForce.reset_index(drop=True, inplace=True)
+                
+                self.dfForce=pd.concat([self.dfForce,self.df[tempStringArray2[ii]]],axis=1,sort=False)
+                self.dfForce=pd.concat([self.dfForce,pd.DataFrame(dftemp,columns=['Force'+'_'+\
+                                                                                  tempStringArray[ii].split('_')[1]+'_'+\
+                                                                                  tempStringArray[ii].split('_')[2]])],axis=1,sort=False)
+# =============================================================================
+#    
+# =============================================================================
+    #Generating mean and SD of the forces along Digital Pressure input and Overlapping distance    
+    def FSPMeanForceAlongOverlappingDistance(self,stentCutExp='n'):
+        
+        # Taking mean along the Digital Pressure values
+        
+        if stentCutExp=='n':
+#            pdb.set_trace()
+            npForce=np.array(self.dfForce) #Dataframe 2 Numpy array
+            self.npForceMeanV=np.zeros((1,npForce.shape[1])) #V stands for vertical
+            self.npForceSDV=np.zeros((1,npForce.shape[1]))
+            digitalPressure=np.unique(npForce[:,0])
+            
+            for i in range(digitalPressure.shape[0]):
+                
+                result = np.where(npForce == digitalPressure[i])
+                
+                self.npForceMeanV=np.vstack((self.npForceMeanV,npForce[result[0],:].mean(axis=0)))
+                self.npForceSDV=np.vstack((self.npForceSDV,npForce[result[0],:].std(axis=0)))
+                
+            self.npForceMeanV=self.npForceMeanV[1:]
+            self.npForceSDV=self.npForceSDV[1:]
+            self.npForceSDV[:,0]=digitalPressure
+            
+            self.dfForceMeanV=pd.DataFrame(self.npForceMeanV,columns=self.dfForce.columns.values)
+            self.dfForceSDV=pd.DataFrame(self.npForceSDV,columns=self.dfForce.columns.values)
+            
+            # Taking mean along the overlapping distances
+            
+            self.npForceMeanSD_VH=np.array([self.npForceMeanV[:,0],\
+                                      self.npForceMeanV[:,1:].mean(axis=1),\
+                                      self.npForceMeanV[:,1:].std(axis=1)]).T  #H means Horizontal direction
+            
+            self.dfForceMeanSD_VH=pd.DataFrame(self.npForceMeanSD_VH,columns=['Digital Pressure','Mean Force','Standard Deviation'])   
+            
+        elif stentCutExp=='y':
+            print('Hurray')
+#            pdb.set_trace()
+            npForce=np.array(self.dfForce)
+            listForce=list()
+            ColSel=np.linspace(0,self.dfForce.shape[1]-2,len(self.files),dtype='int')
+            
+            for ii in range(len(self.files)):
+                #Selecting those rows which doesnot have NaN
+                temp=(npForce[~np.isnan(npForce[:,ColSel[ii]:ColSel[ii]+2]).any(axis=1),ColSel[ii]:ColSel[ii]+2])
+                temp=np.reshape(temp, (int(temp.shape[0]/5),-1),order='F')
+                listForce.append(temp[0:int(temp.shape[0]/2+5),4:])
+                listForce.append(temp[int(temp.shape[0]/2-5):,4:])
+            
+            # Taking mean vertically and creating a list where first element contains the loading and second element contains unloading                    
+            self.listForceMeanV=list()
+            self.listForceSDV=list()
+                
+            for ii in range(0,2*len(self.files),2):
+                digitalPressure1=np.unique(listForce[ii][:,0])
+                digitalPressure2=np.unique(listForce[ii+1][:,0])
+                #Dataframe 2 Numpy array
+                npForceMeanV1=np.zeros((1,listForce[ii].shape[1])) #V stands for vertical
+                npForceSDV1=np.zeros((1,listForce[ii].shape[1]))
+                npForceMeanV2=np.zeros((1,listForce[ii].shape[1])) #V stands for vertical
+                npForceSDV2=np.zeros((1,listForce[ii].shape[1]))
+
+                for i in range(digitalPressure1.shape[0]):
+                    
+                                        
+#                    if i==19:
+#                        pdb.set_trace() 
+                    
+                    result1 = np.where(listForce[ii][:,0] == digitalPressure1[i])
+                    
+                    npForceMeanV1=np.vstack((npForceMeanV1,listForce[ii][result1[0],:].mean(axis=0)))
+                    npForceSDV1=np.vstack((npForceSDV1,listForce[ii][result1[0],:].std(axis=0)))
+                    
+                self.listForceMeanV.append(npForceMeanV1)
+                self.listForceSDV.append(npForceSDV1)
+#                pdb.set_trace()   
+                for i in range(digitalPressure2.shape[0]):
+                    result2 = np.where(listForce[ii+1][:,0] == digitalPressure2[i])
+                    
+                    npForceMeanV2=np.vstack((npForceMeanV2,listForce[ii+1][result2[0],:].mean(axis=0)))
+                    npForceSDV2=np.vstack((npForceSDV2,listForce[ii+1][result2[0],:].std(axis=0)))
+                    
+                self.listForceMeanV.append(npForceMeanV2)
+                self.listForceSDV.append(npForceSDV2)
+                
+            self.listForceMeanSD_VH=list()
+#            pdb.set_trace()
+            for ii in range(len(self.listForceMeanV)):
+                
+                npForceMeanSD_VH=np.array([self.listForceMeanV[ii][:,0],\
+                                      self.listForceMeanV[ii][:,1:].mean(axis=1),\
+                                      self.listForceMeanV[ii][:,1:].std(axis=1)]).T  
+                self.listForceMeanSD_VH.append(npForceMeanSD_VH)
+                
+        elif stentCutExp=='FSP':
+            print('Hurray')
+#            pdb.set_trace()
+            npForce=np.array(self.dfForce)
+            listForce=list()
+            ColSel=np.linspace(0,npForce.shape[1],npForce.shape[1]/2,endpoint=False,dtype='int')
+            
+            for ii in range(len(ColSel)):
+                #Selecting those rows which doesnot have NaN
+                temp=(npForce[~np.isnan(npForce[:,ColSel[ii]:ColSel[ii]+2]).any(axis=1),ColSel[ii]:ColSel[ii]+2])
+#                temp=np.reshape(temp, (int(temp.shape[0]/5),-1),order='F')
+                listForce.append(temp)
+            
+            # Taking mean vertically and creating a list where first element contains the loading and second element contains unloading                    
+            self.listForceMeanV=list()
+            self.listForceSDV=list()
+  
+            for ii in range(0,len(self.files)):
+#                pdb.set_trace()
+                digitalPressure1=np.unique(listForce[ii][:,0])
+#                digitalPressure2=np.unique(listForce[ii+1][:,0])
+                #Dataframe 2 Numpy array
+                npForceMeanV1=np.zeros((1,listForce[ii].shape[1])) #V stands for vertical
+                npForceSDV1=np.zeros((1,listForce[ii].shape[1]))
+
+                for i in range(digitalPressure1.shape[0]):
+                    
+                    result1 = np.where(listForce[ii] == digitalPressure1[i])
+                    
+                    npForceMeanV1=np.vstack((npForceMeanV1,listForce[ii][result1[0],:].mean(axis=0)))
+                    npForceSDV1=np.vstack((npForceSDV1,listForce[ii][result1[0],:].std(axis=0)))
+                    
+                self.listForceMeanV.append(npForceMeanV1)
+                self.listForceSDV.append(npForceSDV1)
+                    
+                self.listForceMeanSD_VH=list()
+
+                for ii in range(len(self.listForceMeanV)):
+                    
+                    npForceMeanSD_VH=np.array([self.listForceMeanV[ii][:,0],\
+                                          self.listForceMeanV[ii][:,1:].mean(axis=1),\
+                                          self.listForceMeanV[ii][:,1:].std(axis=1)]).T  
+                    self.listForceMeanSD_VH.append(npForceMeanSD_VH)
+                    
+# =============================================================================
+#          Alternative constructor           
+# =============================================================================
+    @classmethod
+    def ChangeArticulographyFile(cls,path,stentName,name):
+        stent_Rad=cls(path,stentName,name)
+        stent_Rad.find_all()
+        
+        #Read the Articulography experiment files
+        df1=pd.read_csv(stent_Rad.files[1], sep=',',header=None)
+        df2=pd.read_csv(stent_Rad.files[0], sep=',',header=None)
+        npPressure=np.array(df1)
+        npArt=np.array(df2)
+        
+        #Determin the indexes where Pa=Pb=Pc
+        index1=npPressure[:,0]==npPressure[:,1]
+        temp=npPressure[index1]
+        index2=temp[:,1]==temp[:,2]
+        npPressure2=np.around(temp[index2])
+        
+        #Store the pressure data and the marker data in a single array
+        npArt2=npArt[index1]
+        npArt2=8-npArt2[index2]
+        npArtAllMarkerWithPressure=np.vstack((npPressure2[:,0].T,npArt2.T)).T
+        npArtSelMarkWithPressure=np.vstack((npPressure2[:,0].T,
+                                            npArt2[:,5].T+1,
+                                            npArt2[:,5].T)).T
+        npArtSelMarkWithPressure=npArtSelMarkWithPressure[121:,:]
+        
+        
+        #Remove index with zero
+        index3=npArtSelMarkWithPressure==0
+        npArtSelMarkWithPressure=npArtSelMarkWithPressure[~index3[:,0]]
+        stent_Rad.df=pd.DataFrame(npArtSelMarkWithPressure)
+        stent_Rad.df.columns=['DigitalPressure_','A1_','A2_']
+        stent_Rad.files=[stent_Rad.files[0]]
+#        pdb.set_trace()
+        return stent_Rad
+                
+                 
+                    
+# =============================================================================
+# Main Program
+# =============================================================================
+style.use('classic')
+
+plt.close("all")
+GenPath="/Users/dipankarbhattacharya/Documents/Spyder Python/StentResultsCompilation/StentForceTesting01_06_2019/"                    
+stentName='P1491_1'
+name='FSPBaseLine0'
+#
+#Plotting
+plt.rcParams['figure.figsize'] = (4.0, 2.5) # set default size of plots #4.2x1.8
+plt.rcParams['figure.dpi'] = 300
+plt.rcParams['savefig.dpi'] = 150
+plt.rcParams['figure.facecolor'] = 'white'
+plt.rcParams['grid.linewidth'] = 0.5
+plt.rcParams['grid.linestyle'] = ':'
+plt.rcParams['image.interpolation'] = 'nearest'
+plt.rcParams['font.family']='Helvetica'
+plt.rcParams['font.size']=7
+plt.rcParams['lines.markersize'] = 3
+plt.rc('lines', mew=0.5)
+plt.rcParams['lines.linewidth'] = 1
+#plt.rc_context({'axes.edgecolor':'orange', 'xtick.color':'red', 'ytick.color':'green', 'figure.facecolor':'white'}):
+
+#plt.rcParams['image.cmap'] = 'gray'
+#plt.rcParams['axes.facecolor'] = 'gainsboro'
+matplotlib.rcParams.update({'errorbar.capsize': 1})
+
+# =============================================================================
+# Stent over half FSP Force analysis
+# =============================================================================
+path=GenPath+"FSPStentFullOverlappingHalf24_06_2019/"
+stentName='P1491_1'
+name='FSPBaseLine0'
+
+stentCut_P1491_1_Half_Overlapping_FSP=stentFSP(path,stentName,name)
+stentCut_P1491_1_Half_Overlapping_FSP.find_all()
+stentCut_P1491_1_Half_Overlapping_FSP.FileReading([0,4040],'y')
+stentCut_P1491_1_Half_Overlapping_FSP.FSPDigitalVal2Force('y')
+
+stentCut_P1491_1_Half_Overlapping_FSP.FSPMeanForceAlongOverlappingDistance('y')
+# =============================================================================
+# ESR Pressure Analysis
+# =============================================================================
+path=GenPath+"ESRPressureAnalysis/"
+stentName='P1491_1'
+name='StentCutValveADC'
+
+stentCut_P1491_1_Valve_Pressure=stentFSP(path,stentName,name)
+stentCut_P1491_1_Valve_Pressure.find_all()
+stentCut_P1491_1_Valve_Pressure.FileReading([0,10000],'y')
+stentCut_P1491_1_Valve_Pressure.FSPDigitalVal2Force('y')
+
+stentCut_P1491_1_Valve_Pressure.FSPMeanForceAlongOverlappingDistance('y')
+
+
+#Change the digital pressure value from valve adc to corresponding pressure in KPa
+stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][:,1]=\
+    (stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][:,1]*(5/np.power(2,8))-1)*500/4
+    
+stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][:,1]=\
+    (stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][:,1]*(5/np.power(2,8))-1)*500/4
+stentCut_P1491_1_Valve_Pressure.dfForce.columns=['Digital Pressure','Pressure (KPa)']
+#Round of PRessure
+stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][:,1]=\
+np.around(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][:,1])
+
+stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][:,1]=\
+np.around(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][:,1])
+#%%
+# =============================================================================
+# Repeatability plot of FSP and applied pressure
+# =============================================================================
+plt.figure()
+#plt.hold(True)
+
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[0][1:,1],'-',Marker='o',color='#9b1c31')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[1][1:,1],'-',Marker='s',color='#9b1c31')
+
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[0][1:,2],'-',Marker='o',color='seagreen')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[1][1:,2],'-',Marker='s',color='seagreen')
+
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[0][1:,3],'-',Marker='o',color='#155b8a')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[1][1:,3],'-',Marker='s',color='#155b8a')
+
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[0][1:,4],'-',Marker='o',color='skyblue')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[1][1:,4],'-',Marker='s',color='skyblue')
+
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[0][1:,5],'-',Marker='o',color='k')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanV[1][1:,5],'-',Marker='s',color='k')
+plt.xlabel('Pneumatic pressure  (KPa)')
+plt.ylabel('Force recorded by FSP (N)')
+#%%
+# =============================================================================
+# ESR and STent cut Radius ANALYSIS
+# =============================================================================
+path=GenPath+"ESRRadialAnalysis/"
+stentName='P1491_1'
+name='Articulography'
+
+#we have articulography output and pressure files 
+#which we want to change to the format of file we are using
+
+stentCut_P1491_1_Art_Radial=stentFSP.ChangeArticulographyFile(path,stentName,name)
+stentCut_P1491_1_Art_Radial.FSPDigitalVal2Force('y')
+stentCut_P1491_1_Art_Radial.FSPMeanForceAlongOverlappingDistance('FSP')
+
+npInterpolate=np.interp(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][24:,1], 
+          stentCut_P1491_1_Art_Radial.listForceMeanSD_VH[0][:,0], 
+          stentCut_P1491_1_Art_Radial.listForceMeanSD_VH[0][:,1])
+
+npInterpolate=np.array([stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][24:,1],npInterpolate]).T
+
+plt.figure()
+#plt.hold(True)
+plt.plot(stentCut_P1491_1_Art_Radial.listForceMeanV[0][1:,0],
+         stentCut_P1491_1_Art_Radial.listForceMeanV[0][1:,1],'r-',Marker='o')
+
+plt.plot(npInterpolate[:,0],
+         npInterpolate[:,1],'b-',Marker='o')
+plt.xlabel('Pneumatic pressure  (KPa)')
+plt.ylabel('Displacement (mm)')
+plt.legend(['Actual plot',\
+            'Interpolated plot'])
+#%%
+# =============================================================================
+# Stent Radial Force=FSR Force*(4pi)*ESR Radius/FSR width
+# =============================================================================
+npValvePressureFSRForceArrayLoad=np.array([stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][:,1],
+                                       stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[0][:,1],
+                                       stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[0][:,2]]).T
+    
+npValvePressureFSRForceArrayLoad=npValvePressureFSRForceArrayLoad[24:,:]   
+npStentRadialForceLoad=np.array([npValvePressureFSRForceArrayLoad[:,0],
+                    4*np.pi*(npValvePressureFSRForceArrayLoad[:,1] *npInterpolate[:,1])/13,
+                    4*np.pi*(npValvePressureFSRForceArrayLoad[:,2] *npInterpolate[:,1])/13]).T  
+                        
+
+npValvePressureFSRForceArrayDeload=np.array([np.around(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][:,1]),
+                                       stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[1][:,1],
+                                       stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[1][:,2]]).T
+                        
+npValvePressureFSRForceArrayDeload=npValvePressureFSRForceArrayDeload[24:,:]   
+npStentRadialForceDeload=np.array([npValvePressureFSRForceArrayDeload[:,0],
+                    4*np.pi*(npValvePressureFSRForceArrayDeload[:,1] *npInterpolate[:,1])/13,
+                    4*np.pi*(npValvePressureFSRForceArrayDeload[:,2] *npInterpolate[:,1])/13]).T      
+
+                   
+ #%% 
+plt.figure()
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],
+          stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[0][1:,1],'r-',Marker='o')
+plt.plot(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][1:,1],
+         stentCut_P1491_1_Half_Overlapping_FSP.listForceMeanSD_VH[1][1:,1],'b-',Marker='s')
+plt.xlabel('Pneumatic pressure (KPa)')
+plt.ylabel('FSP detected force (N)')
+plt.legend(['RRF',\
+            'COF'])                     
+plt.figure()
+#plt.hold(True)
+plt.subplot(121)
+plt.plot(npStentRadialForceLoad[:,0],npStentRadialForceLoad[:,1],'r-',Marker='o')
+plt.plot(npStentRadialForceLoad[:,0],npStentRadialForceDeload[:,1],'b-',Marker='s')
+plt.xlabel('Pneumatic pressure  (KPa)')
+plt.ylabel('Radial force (N)')
+plt.legend(['RRF',\
+            'COF'])
+#plt.hold(True)
+plt.subplot(122)
+plt.plot(18-npInterpolate[:,1],npStentRadialForceLoad[:,1],'r-',Marker='o')
+plt.plot(18-npInterpolate[:,1],npStentRadialForceDeload[:,1],'b-',Marker='s')
+plt.xlabel('Stent diameter (mm)')
+plt.ylabel('Radial force (N)')
+plt.legend(['RRF',\
+            'COF'])
+
+##Radial basis Interpolation
+diaStent = 18-npInterpolate[:,1]
+diaStentInterpolate=np.linspace(17, 14, 14)
+
+rbfLoad = Rbf(diaStent, npStentRadialForceLoad[:,1] )
+npStentRadialForceLoadInterp = rbfLoad(diaStentInterpolate)
+
+rbfDeload = Rbf(diaStent, npStentRadialForceDeload[:,1] )
+npStentRadialForceDeloadInterp = rbfDeload(diaStentInterpolate)
+#%%
+#Errorbar plot
+StentRFvsDiaError=plt.figure()
+plt.errorbar(diaStent,npStentRadialForceLoad[:,1],
+             yerr=npStentRadialForceLoad[:,2],
+             marker='o',color='#9b1c31')
+plt.errorbar(diaStent,npStentRadialForceDeload[:,1],
+             yerr=npStentRadialForceDeload[:,2],
+             marker='s',color='#155b8a')
+plt.axhline(y = 0, color = 'black', linewidth = 1.0, alpha = 1)
+plt.axvline(x = 13.5, color = 'black', linewidth = 1.0, alpha = 1)
+plt.tight_layout()
+plt.xticks([13.0,14.0,15.0,16.0,17.0],color='k')
+
+#plot
+plt.rcParams['figure.figsize'] = (2.25, 1.6) 
+StentRFvsDia=plt.figure()
+plt.plot(diaStentInterpolate,
+             npStentRadialForceLoadInterp,
+             marker='o',color='#9b1c31')
+plt.plot(diaStentInterpolate,
+             npStentRadialForceDeloadInterp,
+             marker='s',color='#155b8a')
+
+plt.xlabel('Stent diameter (mm)',color='k')
+plt.ylabel('Radial force (N)',color='k')
+plt.legend(['RRF',\
+            'COF'])
+plt.axhline(y = 0, color = 'black', linewidth = 1.0, alpha = 1)
+plt.axvline(x = 13.0, color = 'black', linewidth = 1.0, alpha = 1)
+plt.tight_layout()
+plt.xticks([13,14.0,15.0,16.0,17.0,18],color='k')
+ #%%  
+#StentRFvsDia.savefig(GenPath+'/plots/StentRFvsDia.pdf')
+
+dy = np.zeros(fi.shape,np.float)
+dy[0:-1] = np.diff(fi)/np.diff(xinterpolate)
+dy[-1] = (fi[-1] - fi[-2])/(xinterpolate[-1] - xinterpolate[-2])
+
+plt.figure()
+#plt.hold(True)
+plt.plot(xinterpolate,fi,'b-',Marker='s')
+plt.plot(x,y,'r-',Marker='s')
+plt.plot(xinterpolate,dy,'g-',Marker='s')
+plt.xlabel('Stent diameter (mm)')
+plt.ylabel('Radial force (N)')
+plt.legend(['RRF',\
+            'COF'])
+#%%    
+#plt.close("all")
+# =============================================================================
+# Stent Elongation Analysis
+# =============================================================================
+path=GenPath+"StentAxialElongationTOF15_06_19/"
+stentName='P1491_1'
+name='StentCutTOFBaseLine0'
+
+stentCut_P1491_1_TOF_Strain=stentFSP(path,stentName,name)
+stentCut_P1491_1_TOF_Strain.find_all()
+stentCut_P1491_1_TOF_Strain.FileReading([0,10000],'y')
+stentCut_P1491_1_TOF_Strain.FSPDigitalVal2Force('y')
+
+stentCut_P1491_1_TOF_Strain.FSPMeanForceAlongOverlappingDistance('y')
+#%%
+plt.figure()
+plt.subplot(211)
+#plt.hold(True)
+
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,1],'r-',Marker='o')
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,1],'r-',Marker='s')
+
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,2],'g-',Marker='o')
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,2],'g-',Marker='s')
+
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,3],'b-',Marker='o')
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,3],'b-',Marker='s')
+
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,4],'k-',Marker='o')
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,4],'k-',Marker='s')
+
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[0][1:,5],'c-',Marker='o')
+plt.plot(stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,0],stentCut_P1491_1_TOF_Strain.listForceMeanV[1][1:,5],'c-',Marker='s')
+#%%
+plt.xlabel('Digital Pressure Value')
+plt.ylabel('Axial Displacement (mm)')
+
+plt.subplot(212)
+
+plt.errorbar(stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[0][1:,0],73-stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[0][1:,1],
+             yerr=stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[0][1:,2],
+             marker='o',color='k',fmt='--',ecolor='k',mec='b')
+
+plt.errorbar(stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,0],73-stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,1],
+             yerr=stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,2], 
+             marker='<',color='k',fmt='--',ecolor='k',mec='b')
+
+plt.xlabel('Digital Pressure Value')
+plt.ylabel('Axial Displacement (mm)')
+#%%
+plt.rcParams['figure.figsize'] = (2.25, 1.6) 
+StentDiaVsPressure=plt.figure()
+
+plt.errorbar(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[0][1:,1],2*(73-stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[0][1:,1])/19.3,
+             yerr=2*stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[0][1:,2]/19.3,
+             marker='o',color='firebrick',fmt='-',ecolor='k')
+
+plt.errorbar(stentCut_P1491_1_Valve_Pressure.listForceMeanSD_VH[1][1:,1],2*(73-stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,1])/19.3,
+             yerr=2*stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,2]/19.3, 
+             marker='<',color='dodgerblue',fmt='-',ecolor='k')
+
+plt.xlabel('Applied chamber pressure (KPa)')
+plt.ylabel('Strain')
+plt.legend(['Contraction',\
+            'Expansion'],
+            loc='lower right')   
+#StentDiaVsPressure.savefig(GenPath+'/plots/StentDiaVsPressure.pdf')
+#%%
+#
+## =============================================================================
+## Considering the elongation Effect
+## =============================================================================
+#ls=127.7
+#lo=55
+#epsilon=2*(73-stentCut_P1491_1_TOF_Strain.listForceMeanSD_VH[1][1:,1])/19.3
+#FstentLoad=npStentRadialForceLoad[:,1]*(ls+ls*epsilon[5:23])/(lo+ls*epsilon[5:23])
+#FstentDeLoad=npStentRadialForceDeload[:,1]*(ls+ls*epsilon[23:])/(lo+ls*epsilon[23:])
+#
+#plt.figure()
+##plt.hold(True)
+#plt.plot(18-npInterpolate[:,1],FstentLoad,'r-',Marker='o')
+#plt.plot(18-npInterpolate[:,1],FstentDeLoad,'b-',Marker='s')
+#plt.xlabel('Stent diameter (mm)')
+#plt.ylabel('Radial force (N)')
+#plt.legend(['RRF',\
+#            'COF'])
+# =============================================================================
+# FSP Caliberation analysis
+# =============================================================================
+path=GenPath+"FSPLoadCellWtAnalysis/"
+stentName='FSP Analysis'
+name='LoadCellFinal'
+FSPAnalysis_10mm_Pos2_50mm=stentFSP(path,stentName,name)
+FSPAnalysis_10mm_Pos2_50mm.find_all()
+FSPAnalysis_10mm_Pos2_50mm.FileReading([0,10000],'FSP')
+FSPAnalysis_10mm_Pos2_50mm.FSPDigitalVal2Force('FSP')
+
+FSPAnalysis_10mm_Pos2_50mm.FSPMeanForceAlongOverlappingDistance('FSP')
+dfFSPOverallMean=FSPAnalysis_10mm_Pos2_50mm.dfForce.mean(axis=0)
+dfFSPOverallSD=FSPAnalysis_10mm_Pos2_50mm.dfForce.std(axis=0)
+npFSPOverallMean=np.array(dfFSPOverallMean)
+npFSPOverallSD=np.array(dfFSPOverallSD)
+# Plotting
+
+
+#plt.figure()
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,2],
+#             marker='o',color='r',fmt='--',ecolor='b',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,0],0.05*9.8*np.ones(6),'r')
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,2],
+#             marker='s',color='g',fmt='--',ecolor='g',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,0],0.2*9.8*np.ones(3),'g')
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,2],
+#             marker='<',color='b',fmt='--',ecolor='k',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,0],0.3*9.8*np.ones(2),'b')
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,2],
+#             marker='*',color='c',fmt='--',ecolor='k',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,0],0.25*9.8*np.ones(3),'c')
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,2],
+#             marker='p',color='m',fmt='--',ecolor='k',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,0],0.15*9.8*np.ones(4),'m')
+#
+#plt.errorbar(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,0],\
+#             FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,1],
+#             yerr=FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,2],
+#             marker='P',color='k',fmt='--',ecolor='k',mec='k')
+#plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,0],0.1*9.8*np.ones(5),'k')
+#
+#plt.plot(60*np.ones(6),npFSPOverallMean[np.linspace(1,11,6,dtype='int')],'maroon',Marker='o')
+
+##
+plt.rcParams['figure.figsize'] = (4.0, 2.5)
+FSPCaliberation=plt.figure()
+constant=40
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,1], alpha=0.2,
+                   c='red',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,1])
+
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[0][1:,1],'r-',alpha=0.2)
+
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,0], 
+            0.2+.98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,1], alpha=0.2,
+                   c='k',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,1], cmap='viridis')
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,0], 
+            0.2+.98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[5][1:,1],'k-',alpha=0.2)
+
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,1], alpha=0.2,
+                   c='m',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,1], cmap='viridis')
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[4][1:,1],'m-',alpha=0.2)
+
+
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,1], alpha=0.2,
+                   c='g',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,1], cmap='inferno')
+
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[1][1:,1],'g-',alpha=0.2)
+
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,1], alpha=0.2,
+                   c='c',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,1], cmap='viridis')
+
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[3][1:,1],'c-',alpha=0.2)
+
+
+plt.scatter(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,1], alpha=0.2,
+                   c='b',
+                   s=constant*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,1], cmap='viridis')
+
+plt.plot(FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,0], 
+            .98*FSPAnalysis_10mm_Pos2_50mm.listForceMeanSD_VH[2][1:,1],'b-',alpha=0.2)
+
+
+
+#plt.scatter(-10*np.ones(6), 
+#            .98*npFSPOverallMean[np.linspace(1,11,6,dtype='int')], alpha=0.2,
+#                   c='maroon',
+#                   s=10*np.ones(6), cmap='viridis')
+
+plt.tight_layout()
+ax = plt.gca()
+plt.legend(['0.49 N',
+            '0.98 N',
+            '1.47 N',
+            '1.96 N',
+            '2.45 N',
+            '2.94 N',
+            ])
+#plt.grid(color='k', linestyle='--', linewidth=0.5)
+#Pos 1 in inkscape plot= pos2 in datasheet
+plt.xlabel('Distance from Position 1 of the FSP (mm)')
+plt.ylabel('Force (N)')
+#FSPCaliberation.savefig(GenPath+'/plots/FSPCaliberation.pdf', bbox_inches='tight')
+## =============================================================================
+## Stent cut experiments
+## =============================================================================
+##plt.close("all")
+#path=GenPath+"FSPStentCut13_06_19/"
+#stentName='P1491_1'
+#name='FSPBaseLine0'
+#
+#stentCut_P1491_1=stentFSP(path,stentName,name)
+#stentCut_P1491_1.find_all()
+#stentCut_P1491_1.FileReading([0,10000],'y')
+#stentCut_P1491_1.FSPDigitalVal2Force('y')
+#
+#stentCut_P1491_1.FSPMeanForceAlongOverlappingDistance('y')
+#
+#
+#
+#plt.figure()
+#plt.subplot(311)
+##plt.hold(True)
+#
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[0][1:,0],stentCut_P1491_1.listForceMeanSD_VH[0][1:,1],'r-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[1][1:,0],stentCut_P1491_1.listForceMeanSD_VH[1][1:,1],'r-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[2][1:,0],stentCut_P1491_1.listForceMeanSD_VH[2][1:,1],'g-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[3][1:,0],stentCut_P1491_1.listForceMeanSD_VH[3][1:,1],'g-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[4][1:,0],stentCut_P1491_1.listForceMeanSD_VH[4][1:,1],'b-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[5][1:,0],stentCut_P1491_1.listForceMeanSD_VH[5][1:,1],'b-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[6][1:,0],stentCut_P1491_1.listForceMeanSD_VH[6][1:,1],'k-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanSD_VH[7][1:,0],stentCut_P1491_1.listForceMeanSD_VH[7][1:,1],'k-',Marker='s')
+#
+#plt.xlabel('Digital Pressure Value')
+#plt.ylabel('Radial Force (N)')
+#plt.legend(['Maximum Pressure=95KPa (Loading)',\
+#            'Maximum Pressure=95KPa (Unoading)',\
+#            'Maximum Pressure=105KPa (Loading)',\
+#            'Maximum Pressure=105KPa (Unoading)',\
+#            'Maximum Pressure=86KPa (Loading)',\
+#            'Maximum Pressure=86KPa (Unoading)',\
+#            'Maximum Pressure=76KPa (Loading)',\
+#            'Maximum Pressure=76KPa (Unoading)'])
+#    
+#plt.subplot(312)
+##plt.hold(True)
+#
+#plt.plot(stentCut_P1491_1.listForceMeanV[2][1:,0],stentCut_P1491_1.listForceMeanV[2][1:,1],'r-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanV[3][1:,0],stentCut_P1491_1.listForceMeanV[3][1:,1],'r-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanV[2][1:,0],stentCut_P1491_1.listForceMeanV[2][1:,2],'g-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanV[3][1:,0],stentCut_P1491_1.listForceMeanV[3][1:,2],'g-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanV[2][1:,0],stentCut_P1491_1.listForceMeanV[2][1:,3],'b-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanV[3][1:,0],stentCut_P1491_1.listForceMeanV[3][1:,3],'b-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanV[2][1:,0],stentCut_P1491_1.listForceMeanV[2][1:,4],'k-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanV[3][1:,0],stentCut_P1491_1.listForceMeanV[3][1:,4],'k-',Marker='s')
+#
+#plt.plot(stentCut_P1491_1.listForceMeanV[2][1:,0],stentCut_P1491_1.listForceMeanV[2][1:,5],'c-',Marker='o')
+#plt.plot(stentCut_P1491_1.listForceMeanV[3][1:,0],stentCut_P1491_1.listForceMeanV[3][1:,5],'c-',Marker='s')
+#
+#plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[2][1:,0],stentCut_P1491_1.listForceMeanSD_VH[2][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[2][1:,2],
+#             marker='o',color='g',fmt='--',ecolor='k',mec='b')
+#
+#p=plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[3][1:,0],stentCut_P1491_1.listForceMeanSD_VH[3][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[3][1:,2], 
+#             marker='<',color='g',fmt='--',ecolor='k',mec='b')
+#
+#plt.xlabel('Digital Pressure Value')
+#plt.ylabel('Radial Force (N)')
+#
+#plt.subplot(313)
+#plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[6][1:,0],stentCut_P1491_1.listForceMeanSD_VH[6][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[6][1:,2],
+#             marker='o',color='r',fmt='--',ecolor='k',mec='b')
+#
+#plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[7][1:,0],stentCut_P1491_1.listForceMeanSD_VH[7][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[7][1:,2], 
+#             marker='<',color='r',fmt='--',ecolor='k',mec='b')
+#
+#plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[2][1:,0],stentCut_P1491_1.listForceMeanSD_VH[2][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[2][1:,2],
+#             marker='o',color='g',fmt='--',ecolor='k',mec='b')
+#
+#p=plt.errorbar(stentCut_P1491_1.listForceMeanSD_VH[3][1:,0],stentCut_P1491_1.listForceMeanSD_VH[3][1:,1],
+#             yerr=stentCut_P1491_1.listForceMeanSD_VH[3][1:,2], 
+#             marker='<',color='g',fmt='--',ecolor='k',mec='b')
+#
+#plt.xlabel('Digital Pressure Value')
+#plt.ylabel('Radial Force (N)')
+############################## End of Prog
+
+#stent_P1491_1=stentFSP(path,stentName,name)
+#stent_P1491_1.find_all()
+#stent_P1491_1.FileReading([0,269])
+#stent_P1491_1.FSPDigitalVal2Force()
+#stent_P1491_1.FSPMeanForceAlongOverlappingDistance()
+#
+#GenPath="/Users/dipankarbhattacharya/Documents/Spyder Python/StentResultsCompilation/StentForceTesting01_06_2019/"                    
+#path=GenPath+"FSPComparisonChangeOverlapping3/"
+#stentName='P1491_1'
+#name='FSPBaseLine40'
+#
+#stent_P1491_1_40=stentFSP(path,stentName,name)
+#stent_P1491_1_40.find_all()
+#stent_P1491_1_40.FileReading([109,269])
+#stent_P1491_1_40.FSPDigitalVal2Force()
+#stent_P1491_1_40.FSPMeanForceAlongOverlappingDistance()
+#
+#distanceArray=np.array([1,float(stent_P1491_1.files[0][75:77]),\
+#                        float(stent_P1491_1.files[1][75:77]),
+#                        float(stent_P1491_1.files[2][75:77]),\
+#                        float(stent_P1491_1.files[3][75:76])+6,\
+#                        float(stent_P1491_1.files[4][75:77])])
+#
+#dfMergeForceMeanV=pd.concat([stent_P1491_1.dfForceMeanV, stent_P1491_1_40.dfForceMeanV],sort=False)
+#tempStr=dfMergeForceMeanV.columns.values
+#dfMergeForceMeanV=np.array(dfMergeForceMeanV)/distanceArray
+#dfMergeForceMean_VH2=dfMergeForceMeanV[:,1:].mean(axis=1)
+#dfMergeForceMeanSD_VH2=dfMergeForceMeanV[:,1:].std(axis=1)
+#
+#dfMergeForceMeanV=pd.DataFrame(dfMergeForceMeanV)
+#dfMergeForceMeanV.columns=tempStr
+#
+#dfMergeForceMeanSD_VH=pd.concat([stent_P1491_1.dfForceMeanSD_VH, stent_P1491_1_40.dfForceMeanSD_VH],sort=False)
+#
+#dfMergeForceMeanSD_VH.reset_index(drop=True, inplace=True)
+#dfMergeForceMeanV.reset_index(drop=True, inplace=True)
+#
+#
+#
+#
+#
+#
+#
+#plt.figure()
+##fig, axes = plt.subplots(1,1, figsize=(7, 7), sharex=True, dpi=120)
+#ax=plt.gca()
+#dfMergeForceMeanV.plot(x='Digital Pressure', y='19mm.csv',ax=ax,color='r',title='Original Series')
+#dfMergeForceMeanV.plot(x='Digital Pressure', y='39mm.csv',ax=ax,color='g',title='Original Series')
+#dfMergeForceMeanV.plot(x='Digital Pressure', y='29mm.csv',ax=ax,color='b',title='Original Series')
+#dfMergeForceMeanV.plot(x='Digital Pressure', y='9mm.csv',ax=ax,color='darkred',title='Original Series')
+#dfMergeForceMeanV.plot(x='Digital Pressure', y='49mm.csv',ax=ax,color='k',title='Original Series')
+#
+#
+##plt.figure()
+##plt.errorbar(stent_P1491_1.dfForceMeanV['Digital Pressure'],stent_P1491_1.dfForceMeanV['19mm.csv'],
+##             xerr=stent_P1491_1.dfForceSDV['19mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='r')
+##plt.errorbar(stent_P1491_1.dfForceMeanV['Digital Pressure'],stent_P1491_1.dfForceMeanV['39mm.csv'],
+##             xerr=stent_P1491_1.dfForceSDV['39mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='g')
+##plt.errorbar(stent_P1491_1.dfForceMeanV['Digital Pressure'],stent_P1491_1.dfForceMeanV['29mm.csv'],
+##             xerr=stent_P1491_1.dfForceSDV['29mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='b')
+##plt.errorbar(stent_P1491_1.dfForceMeanV['Digital Pressure'],stent_P1491_1.dfForceMeanV['9mm.csv'],
+##             xerr=stent_P1491_1.dfForceSDV['9mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='c')
+##plt.errorbar(stent_P1491_1.dfForceMeanV['Digital Pressure'],stent_P1491_1.dfForceMeanV['49mm.csv'],
+##             xerr=stent_P1491_1.dfForceSDV['49mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='m')
+##
+##plt.errorbar(stent_P1491_1_40.dfForceMeanV['Digital Pressure'],stent_P1491_1_40.dfForceMeanV['19mm.csv'],
+##             xerr=stent_P1491_1_40.dfForceSDV['19mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='r')
+##plt.errorbar(stent_P1491_1_40.dfForceMeanV['Digital Pressure'],stent_P1491_1_40.dfForceMeanV['39mm.csv'],
+##             xerr=stent_P1491_1_40.dfForceSDV['39mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='g')
+##plt.errorbar(stent_P1491_1_40.dfForceMeanV['Digital Pressure'],stent_P1491_1_40.dfForceMeanV['29mm.csv'],
+##             xerr=stent_P1491_1_40.dfForceSDV['29mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='b')
+##plt.errorbar(stent_P1491_1_40.dfForceMeanV['Digital Pressure'],stent_P1491_1_40.dfForceMeanV['9mm.csv'],
+##             xerr=stent_P1491_1_40.dfForceSDV['9mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='c')
+##plt.errorbar(stent_P1491_1_40.dfForceMeanV['Digital Pressure'],stent_P1491_1_40.dfForceMeanV['49mm.csv'],
+##             xerr=stent_P1491_1_40.dfForceSDV['49mm.csv'],
+##             marker='s', mfc='blue',mec='k', ms=1, mew=2,fmt='o-',color='m')
+#
+#plt.figure()
+#plt.errorbar(dfMergeForceMeanSD_VH['Digital Pressure'],dfMergeForceMeanSD_VH['Mean Force'],
+#             yerr=dfMergeForceMeanSD_VH['Standard Deviation'], 
+#             marker='s', mfc='blue',mec='green', ms=2, mew=2,fmt='o-')
+#
+#plt.figure()
+#plt.errorbar(dfMergeForceMeanSD_VH['Digital Pressure'],dfMergeForceMean_VH2,
+#             yerr=dfMergeForceMeanSD_VH2, 
+#             marker='s', mfc='blue',mec='green', ms=2, mew=2,fmt='o-')
+

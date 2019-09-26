@@ -1,0 +1,19 @@
+FileType = History
+FileFormatRev = 0
+
+Application = "Esophageal"
+ApplicationSetup1 = "YEJbR1ZQWVlXTA=="
+ApplicationSetup2 = "cF9GUk1FTFVVVENB"
+
+Begin Patient
+   Patient = "sat"
+   PatientID = ""
+   PatientDOB = ""
+   Exported = "No "
+   Physician = "Jacqui Allen, MBChB, FRACS"
+   ReferringPhysician = "Jacqui Allen, FRACS"
+   Hospital = "UCDMC  ENT Clinic"
+   Date = "2017-12-12"
+   Time = "02:16:20"
+End Patient
+

@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Aug 22 14:14:55 2019
+
+@author: dipankarbhattacharya
+"""
+
+import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib import animation
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+
+
+#X = np.arange(-5, 5, 0.25)
+#Y = np.arange(-5, 5, 0.25)
+#X, Y = np.meshgrid(X, Y)
+#R = np.sqrt(X**2 + Y**2)
+#Z = np.sin(R)
+#
+## Create a figure and a 3D Axes
+#fig = plt.figure()
+#ax = Axes3D(fig)
+#
+#def init():
+#    # Plot the surface.
+#    ax.plot_surface(X, Y, Z, cmap=cm.coolwarm,
+#                       linewidth=0, antialiased=False)
+#    return fig,
+#
+#def animate(i):
+#    # azimuth angle : 0 deg to 360 deg
+#    ax.view_init(elev=10, azim=i*4)
+#    return fig,
+#
+## Animate
+#ani = animation.FuncAnimation(fig, animate, init_func=init,
+#                               frames=90, interval=50, blit=True)
+
+value=(np.exp(-65.929/20)+np.exp(-64.515/20)+np.exp(-84.255/20))/3
+print(value)
+
+print(20*np.log(value))
